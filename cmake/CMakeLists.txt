@@ -1586,16 +1586,30 @@ if (onnxruntime_USE_CUDA)
       file(MAKE_DIRECTORY "${_cub_compat_dir}")
       file(WRITE "${_cub_compat_dir}/cub.cuh"
 "// Auto-generated CUDA 13 CUB compatibility shim — do not edit.
-// Re-exports cub::Sum, cub::Max, cub::Min which were removed in CUDA 13.
+// Re-exports cub::Sum, cub::Max, cub::Min, cub::FpLimits which were removed in CUDA 13.
 #pragma once
-#include <cccl/cub/cub.cuh>
+// Pull in the real CUB using an absolute path to avoid self-inclusion.
+// (cmake substitutes the literal path at generation time)
+#include \"${_cccl_dir}/cub/cub.cuh\"
+// CUDA 13 replacements for removed reduction functors and type traits.
+#ifndef _ORT_CUDA13_CUB_COMPAT_
+#define _ORT_CUDA13_CUB_COMPAT_
 #include <cuda/functional>
 #include <cuda/std/functional>
+#include <cuda/std/limits>
 namespace cub {
 using Sum = ::cuda::std::plus<>;
 using Max = ::cuda::maximum<>;
 using Min = ::cuda::minimum<>;
+template <typename T>
+struct FpLimits {
+  __host__ __device__ __forceinline__
+  static T Lowest() { return ::cuda::std::numeric_limits<T>::lowest(); }
+  __host__ __device__ __forceinline__
+  static T Max() { return ::cuda::std::numeric_limits<T>::max(); }
+};
 } // namespace cub
+#endif // _ORT_CUDA13_CUB_COMPAT_
 ")
       # Prepend the compat wrapper dir so #include <cub/cub.cuh> finds our shim first.
       include_directories(BEFORE SYSTEM "${CMAKE_BINARY_DIR}/cuda13_cub_compat")
