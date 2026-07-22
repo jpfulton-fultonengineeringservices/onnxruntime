@@ -196,6 +196,10 @@
                   "$<$<NOT:$<COMPILE_LANGUAGE:CUDA>>:-Wno-reorder>")
       target_compile_options(${target} PRIVATE "$<$<COMPILE_LANGUAGE:CUDA>:SHELL:-Xcompiler -Wno-error=sign-compare>"
                   "$<$<NOT:$<COMPILE_LANGUAGE:CUDA>>:-Wno-error=sign-compare>")
+      # CUDA 13 marks longlong4/long4/ulonglong4/ulong4 as deprecated; suppress
+      # in both CUDA device code (via -Xcompiler) and CXX host code paths.
+      target_compile_options(${target} PRIVATE "$<$<COMPILE_LANGUAGE:CUDA>:SHELL:-Xcompiler -Wno-deprecated-declarations>"
+                  "$<$<NOT:$<COMPILE_LANGUAGE:CUDA>>:-Wno-deprecated-declarations>")
     else()
       #mutex.cuh(91): warning C4834: discarding return value of function with 'nodiscard' attribute
       target_compile_options(${target} PRIVATE "$<$<COMPILE_LANGUAGE:CUDA>:SHELL:-Xcompiler /wd4834>")

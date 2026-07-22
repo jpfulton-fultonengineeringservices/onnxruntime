@@ -128,6 +128,8 @@ Status PastPresentBufferShare(int batch_size, int num_heads, int qk_head_size, i
                               cudaStream_t stream,
                               int max_threads_per_block);
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 template <typename T>
 Status LaunchStridedCopy(
     cudaStream_t stream,
@@ -140,6 +142,7 @@ Status LaunchStridedCopy(cudaStream_t stream,
                          const T* in, int4 in_shape, longlong4 in_strides,  // coord (b,n,s,h)
                          T* out, longlong4 out_strides,                     // coord (b,n,s,h)
                          int max_threads_per_block);
+#pragma GCC diagnostic pop
 
 }  // namespace cuda
 }  // namespace contrib

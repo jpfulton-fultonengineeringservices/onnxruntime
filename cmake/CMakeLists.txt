@@ -833,6 +833,12 @@ else()
   if (HAS_SHORTEN_64_TO_32)
     list(APPEND ORT_WARNING_FLAGS -Wshorten-64-to-32)
   endif()
+  # CUDA 13 marks longlong4/long4/ulonglong4/ulong4 as deprecated via __attribute__((deprecated)).
+  # GCC promotes this to an error via COMPILE_WARNING_AS_ERROR.  Suppress unconditionally on non-MSVC
+  # builds targeting CUDA 13+ to allow the ORT CUDA provider and CUTLASS code to compile cleanly.
+  if (onnxruntime_USE_CUDA)
+    list(APPEND ORT_WARNING_FLAGS -Wno-deprecated-declarations)
+  endif()
 endif()
 
 if (onnxruntime_USE_KLEIDIAI AND NOT MSVC AND (
@@ -1562,6 +1568,28 @@ if (onnxruntime_USE_CUDA)
     file(TO_CMAKE_PATH CUDAToolkit_ROOT ${onnxruntime_CUDA_HOME})
   endif()
   find_package(CUDAToolkit REQUIRED)
+  # CUDA 13 reorganised CUB/Thrust into cccl/ — there is no longer a top-level cub/ or thrust/
+  # directory in the CUDA include path, which breaks ORT's #include <cub/cub.cuh> references.
+  # Detect this layout and create a local compatibility overlay at configure time.
+  if (NOT EXISTS "${CUDAToolkit_INCLUDE_DIRS}/cub/cub.cuh")
+    set(_cccl_cub "${CUDAToolkit_INCLUDE_DIRS}/cccl/cub/cub.cuh")
+    if (EXISTS "${_cccl_cub}")
+      # CUDA 13+ layout: cub is under cccl/.  Create a one-time overlay in the build tree.
+      set(_cuda13_compat "${CMAKE_BINARY_DIR}/cuda13_include_compat")
+      message(STATUS "CUDA 13+ detected: CUB is under cccl/. Creating compat overlay: ${_cuda13_compat}")
+      foreach(_lib cub thrust nv)
+        if (EXISTS "${CUDAToolkit_INCLUDE_DIRS}/cccl/${_lib}" AND NOT EXISTS "${_cuda13_compat}/${_lib}")
+          file(MAKE_DIRECTORY "${_cuda13_compat}")
+          execute_process(
+            COMMAND ${CMAKE_COMMAND} -E create_symlink
+              "${CUDAToolkit_INCLUDE_DIRS}/cccl/${_lib}"
+              "${_cuda13_compat}/${_lib}"
+          )
+        endif()
+      endforeach()
+      include_directories(BEFORE SYSTEM "${_cuda13_compat}")
+    endif()
+  endif()
   if (NOT CMAKE_CUDA_ARCHITECTURES)
     # Note that we generate SASS+PTX code for specified cuda architectures by assigning "xy"
     # To add SASS only, assign "xy-real"
@@ -1596,6 +1624,11 @@ if (onnxruntime_USE_CUDA)
   set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcudafe \"--diag_suppress=bad_friend_decl\"")
   set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcudafe \"--diag_suppress=unsigned_compare_with_zero\"")
   set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcudafe \"--diag_suppress=expr_has_no_effect\"")
+  # CUDA 13 deprecated longlong4/ulonglong4/long4/ulong4 — suppress the warning so it does not
+  # become a fatal error under --Werror default-stream-launch.  The deprecation affects both
+  # CUDA device code (nvcc) and GCC host code (which sees the CUDA header __attribute__((deprecated))).
+  # Note: -Wno-deprecated-declarations is also added to ORT_WARNING_FLAGS (applied after -Wall).
+  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcudafe \"--diag_suppress=deprecated_entity_with_custom_message\"")
 
   if (onnxruntime_ENABLE_CUDA_LINE_NUMBER_INFO)
     add_compile_options("$<$<COMPILE_LANGUAGE:CUDA>:--generate-line-info>")
