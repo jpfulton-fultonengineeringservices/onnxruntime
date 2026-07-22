@@ -1569,25 +1569,36 @@ if (onnxruntime_USE_CUDA)
   endif()
   find_package(CUDAToolkit REQUIRED)
   # CUDA 13 reorganised CUB/Thrust into cccl/ — there is no longer a top-level cub/ or thrust/
-  # directory in the CUDA include path, which breaks ORT's #include <cub/cub.cuh> references.
-  # Detect this layout and create a local compatibility overlay at configure time.
+  # directory in the CUDA include path.  Additionally, cub::Sum, cub::Max, cub::Min were removed
+  # from the CUB API in favour of cuda::std::plus<>, cuda::maximum<>, cuda::minimum<>.
+  # Fix both issues:
+  #   1. Add cccl/ as a system include so that #include <cub/block/...> etc. resolve.
+  #   2. Create a wrapper cub/cub.cuh in the build tree that pulls in the real one and then
+  #      re-exports cub::Sum/Max/Min as aliases for the new CCCL types.
   if (NOT EXISTS "${CUDAToolkit_INCLUDE_DIRS}/cub/cub.cuh")
-    set(_cccl_cub "${CUDAToolkit_INCLUDE_DIRS}/cccl/cub/cub.cuh")
-    if (EXISTS "${_cccl_cub}")
-      # CUDA 13+ layout: cub is under cccl/.  Create a one-time overlay in the build tree.
-      set(_cuda13_compat "${CMAKE_BINARY_DIR}/cuda13_include_compat")
-      message(STATUS "CUDA 13+ detected: CUB is under cccl/. Creating compat overlay: ${_cuda13_compat}")
-      foreach(_lib cub thrust nv)
-        if (EXISTS "${CUDAToolkit_INCLUDE_DIRS}/cccl/${_lib}" AND NOT EXISTS "${_cuda13_compat}/${_lib}")
-          file(MAKE_DIRECTORY "${_cuda13_compat}")
-          execute_process(
-            COMMAND ${CMAKE_COMMAND} -E create_symlink
-              "${CUDAToolkit_INCLUDE_DIRS}/cccl/${_lib}"
-              "${_cuda13_compat}/${_lib}"
-          )
-        endif()
-      endforeach()
-      include_directories(BEFORE SYSTEM "${_cuda13_compat}")
+    set(_cccl_dir "${CUDAToolkit_INCLUDE_DIRS}/cccl")
+    if (EXISTS "${_cccl_dir}/cub/cub.cuh")
+      message(STATUS "CUDA 13+ detected: CUB is under cccl/. Creating compat overlay.")
+      # (a) Expose cccl/ subdirs directly so <cub/block/...>, <thrust/...> etc. resolve.
+      include_directories(BEFORE SYSTEM "${_cccl_dir}")
+      # (b) Write a wrapper cub/cub.cuh in the build tree that re-adds removed functors.
+      set(_cub_compat_dir "${CMAKE_BINARY_DIR}/cuda13_cub_compat/cub")
+      file(MAKE_DIRECTORY "${_cub_compat_dir}")
+      file(WRITE "${_cub_compat_dir}/cub.cuh"
+"// Auto-generated CUDA 13 CUB compatibility shim — do not edit.
+// Re-exports cub::Sum, cub::Max, cub::Min which were removed in CUDA 13.
+#pragma once
+#include <cccl/cub/cub.cuh>
+#include <cuda/functional>
+#include <cuda/std/functional>
+namespace cub {
+using Sum = ::cuda::std::plus<>;
+using Max = ::cuda::maximum<>;
+using Min = ::cuda::minimum<>;
+} // namespace cub
+")
+      # Prepend the compat wrapper dir so #include <cub/cub.cuh> finds our shim first.
+      include_directories(BEFORE SYSTEM "${CMAKE_BINARY_DIR}/cuda13_cub_compat")
     endif()
   endif()
   if (NOT CMAKE_CUDA_ARCHITECTURES)
