@@ -17,9 +17,8 @@ if(NOT cutlass_POPULATED)
   set(_cutlass_adapter "${cutlass_SOURCE_DIR}/include/cutlass/cuda_host_adapter.hpp")
   if (EXISTS "${_cutlass_adapter}")
     execute_process(
-      COMMAND sed -i
-        "s|(__CUDACC_VER_MAJOR__ >= 12 && __CUDACC_VER_MINOR__ >= 5)|(__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 \&\& __CUDACC_VER_MINOR__ >= 5))|g"
-        "${_cutlass_adapter}"
+      COMMAND python3 -c
+        "import sys; p='${_cutlass_adapter}'; c=open(p).read(); open(p,'w').write(c.replace('(__CUDACC_VER_MAJOR__ >= 12 && __CUDACC_VER_MINOR__ >= 5)','(__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 5))'))"
     )
   endif()
 endif()
