@@ -1568,6 +1568,9 @@ if (onnxruntime_USE_CUDA)
     file(TO_CMAKE_PATH CUDAToolkit_ROOT ${onnxruntime_CUDA_HOME})
   endif()
   find_package(CUDAToolkit REQUIRED)
+  # CUDAToolkit_INCLUDE_DIRS is a semicolon-separated list; extract the first
+  # (main) include dir so the cub/cccl detection below works with a single path.
+  list(GET CUDAToolkit_INCLUDE_DIRS 0 _cuda_main_include_dir)
   # CUDA 13 reorganised CUB/Thrust into cccl/ — there is no longer a top-level cub/ or thrust/
   # directory in the CUDA include path.  Additionally, cub::Sum, cub::Max, cub::Min were removed
   # from the CUB API in favour of cuda::std::plus<>, cuda::maximum<>, cuda::minimum<>.
@@ -1575,8 +1578,8 @@ if (onnxruntime_USE_CUDA)
   #   1. Add cccl/ as a system include so that #include <cub/block/...> etc. resolve.
   #   2. Create a wrapper cub/cub.cuh in the build tree that pulls in the real one and then
   #      re-exports cub::Sum/Max/Min as aliases for the new CCCL types.
-  if (NOT EXISTS "${CUDAToolkit_INCLUDE_DIRS}/cub/cub.cuh")
-    set(_cccl_dir "${CUDAToolkit_INCLUDE_DIRS}/cccl")
+  if (NOT EXISTS "${_cuda_main_include_dir}/cub/cub.cuh")
+    set(_cccl_dir "${_cuda_main_include_dir}/cccl")
     if (EXISTS "${_cccl_dir}/cub/cub.cuh")
       message(STATUS "CUDA 13+ detected: CUB is under cccl/. Creating compat overlay.")
       # (a) Expose cccl/ subdirs directly so <cub/block/...>, <thrust/...> etc. resolve.
